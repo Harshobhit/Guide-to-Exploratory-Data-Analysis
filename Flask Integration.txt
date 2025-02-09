@@ -180,3 +180,286 @@ Write the DataFrame to an Excel file in memory and send it as a downloadable res
 
 This approach ensures that the Excel file is maintained in memory for each user, providing fast read and manipulation operations. Feel free to ask if you have more questions or need further assistance!
 
+
+
+
+#State Handling Flask#
+n case user wants to go back to previous state of a file, is that possible in flask to maintain state at each level?
+Yes, it's possible to maintain the state of a file at each level and allow users to revert to a previous state in a Flask application. You can implement a versioning system that keeps track of each change made to the file. Here are a few approaches you could consider:
+
+1. In-Memory Versioning
+Store versions of the file in memory. This approach is suitable for smaller applications or when the number of versions is limited.
+
+2. File-Based Versioning
+Save each version of the file on disk with a timestamp or version number. This approach is suitable for larger applications or when the number of versions may be significant.
+
+Example: In-Memory Versioning
+Here's an example of how to implement in-memory versioning in a Flask application:
+
+Flask Application
+python
+from flask import Flask, request, session, jsonify
+from flask_session import Session
+import pandas as pd
+from io import BytesIO
+import os
+import uuid
+
+app = Flask(__name__)
+
+# Configure server-side session
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SECRET_KEY'] = 'supersecretkey'
+Session(app)
+
+# In-memory storage for Excel files and their versions
+in_memory_excel_files = {}
+file_versions = {}
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return 'No file part', 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return 'No selected file', 400
+    
+    if file and file.filename.endswith(('.xlsx', '.xls')):
+        # Read Excel file into a pandas DataFrame
+        df = pd.read_excel(file)
+        
+        # Store DataFrame in memory associated with the user session
+        user_id = session.sid
+        in_memory_excel_files[user_id] = df
+        file_versions[user_id] = [df.copy()]
+        
+        return 'File successfully uploaded and stored in memory'
+    
+    return 'File type not allowed', 400
+
+@app.route('/data', methods=['GET'])
+def get_data():
+    user_id = session.sid
+    df = in_memory_excel_files.get(user_id)
+    
+    if df is not None:
+        return jsonify(df.to_dict(orient='records'))
+    
+    return 'No data found in memory', 404
+
+@app.route('/modify', methods=['POST'])
+def modify_data():
+    user_id = session.sid
+    df = in_memory_excel_files.get(user_id)
+    
+    if df is not None:
+        # Example modification: Add a new column
+        df['new_column'] = df.iloc[:, 0] * 2
+        
+        # Update DataFrame in memory
+        in_memory_excel_files[user_id] = df
+        
+        # Save the modified version
+        file_versions[user_id].append(df.copy())
+        
+        return 'Data successfully modified and stored in memory'
+    
+    return 'No data found in memory', 404
+
+@app.route('/revert', methods=['POST'])
+def revert_data():
+    user_id = session.sid
+    versions = file_versions.get(user_id)
+    
+    if versions and len(versions) > 1:
+        # Revert to the previous version
+        versions.pop()
+        in_memory_excel_files[user_id] = versions[-1]
+        return 'Reverted to the previous version'
+    
+    return 'No previous version found', 404
+
+@app.route('/download', methods=['GET'])
+def download_file():
+    user_id = session.sid
+    df = in_memory_excel_files.get(user_id)
+    
+    if df is not None:
+        # Write DataFrame to an Excel file in memory
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sheet1')
+        output.seek(0)
+        
+        return send_file(output, attachment_filename='output.xlsx', as_attachment=True)
+    
+    return 'No data found in memory', 404
+
+if __name__ == '__main__':
+    app.run(debug=True)
+Explanation:
+Upload Endpoint (/upload):
+
+Read the uploaded Excel file into a pandas DataFrame.
+
+Store the DataFrame in memory associated with the user session.
+
+Save the initial version of the file.
+
+Get Data Endpoint (/data):
+
+Retrieve the DataFrame from memory for the current user session and return it as JSON.
+
+Modify Data Endpoint (/modify):
+
+Retrieve the DataFrame from memory for the current user session.
+
+Modify the DataFrame and store it back in memory.
+
+Save the modified version.
+
+Revert Endpoint (/revert):
+
+Retrieve the list of versions for the current user session.
+
+Revert to the previous version if it exists.
+
+Download Endpoint (/download):
+
+Retrieve the DataFrame from memory for the current user session.
+
+Write the DataFrame to an Excel file in memory and send it as a downloadable response.
+
+This approach allows users to maintain the state of a file at each level and revert to a previous state if needed. Feel free to ask if you have more questions or need further assistance!
+
+is there any better way to do rather than storing each version of file?
+Certainly! Storing each version of the file can be memory-intensive, especially if there are many changes. Here are some alternative approaches:
+
+1. Delta Storage (Change Tracking)
+Instead of storing the entire file each time, you can store only the changes (deltas) made to the file. This method reduces the storage requirements by keeping track of incremental changes rather than entire file versions.
+
+Example:
+You can use a diff/patch mechanism to store differences between versions. Libraries like difflib in Python can help with this.
+
+2. Database Storage
+Store the file data in a database. Databases are optimized for efficient storage and retrieval, and you can use database features for version control or change tracking.
+
+Example:
+Relational Database: Store the file data and changes in a relational database (e.g., MySQL, PostgreSQL).
+
+NoSQL Database: Use a NoSQL database like MongoDB to store JSON representations of the file.
+
+3. Git-Based Versioning
+Use a git-like versioning system for file management. Git is designed for efficient storage of changes and provides built-in mechanisms for reverting to previous states.
+
+Example:
+GitPython: Use the GitPython library to manage file versions.
+
+Custom Git-Like System: Implement a custom system that mimics git's version control features.
+
+4. In-Memory Data Structures with Checkpoints
+Use in-memory data structures to store the file state and create checkpoints at significant changes. Checkpoints can be stored periodically, and changes between checkpoints can be stored as deltas.
+
+Example:
+Checkpoints: Create checkpoints after significant changes.
+
+Deltas: Store deltas between checkpoints.
+
+Delta Storage Example:
+Here's an example of implementing delta storage with a simple diff/patch mechanism in Flask:
+
+Flask Application with Delta Storage
+python
+from flask import Flask, request, session, jsonify
+from flask_session import Session
+import pandas as pd
+import difflib
+import json
+import uuid
+
+app = Flask(__name__)
+
+# Configure server-side session
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SECRET_KEY'] = 'supersecretkey'
+Session(app)
+
+# In-memory storage for Excel files and their deltas
+file_versions = {}
+deltas = {}
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return 'No file part', 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return 'No selected file', 400
+    
+    if file and file.filename.endswith(('.xlsx', '.xls')):
+        # Read Excel file into a pandas DataFrame
+        df = pd.read_excel(file)
+        
+        # Store DataFrame in memory associated with the user session
+        user_id = session.sid
+        file_versions[user_id] = df
+        deltas[user_id] = []
+        
+        return 'File successfully uploaded and stored in memory'
+    
+    return 'File type not allowed', 400
+
+@app.route('/modify', methods=['POST'])
+def modify_data():
+    user_id = session.sid
+    df = file_versions.get(user_id)
+    
+    if df is not None:
+        # Example modification: Add a new column
+        new_df = df.copy()
+        new_df['new_column'] = df.iloc[:, 0] * 2
+        
+        # Store the delta (difference)
+        old_data = df.to_dict()
+        new_data = new_df.to_dict()
+        delta = list(difflib.ndiff(json.dumps(old_data), json.dumps(new_data)))
+        deltas[user_id].append(delta)
+        
+        # Update DataFrame in memory
+        file_versions[user_id] = new_df
+        
+        return 'Data successfully modified and stored in memory'
+    
+    return 'No data found in memory', 404
+
+@app.route('/revert', methods=['POST'])
+def revert_data():
+    user_id = session.sid
+    delta_list = deltas.get(user_id)
+    
+    if delta_list and len(delta_list) > 0:
+        # Revert the last change
+        delta = delta_list.pop()
+        current_data = json.dumps(file_versions[user_id].to_dict())
+        original_data = ''.join(difflib.restore(delta, 1))
+        
+        # Convert JSON string back to DataFrame
+        file_versions[user_id] = pd.DataFrame(json.loads(original_data))
+        
+        return 'Reverted to the previous version'
+    
+    return 'No previous version found', 404
+
+if __name__ == '__main__':
+    app.run(debug=True)
+Explanation:
+Delta Storage: Instead of storing each version of the file, only the changes (deltas) are stored.
+
+Modification: When the file is modified, the delta (difference) is calculated and stored.
+
+Reversion: To revert to a previous version, the last delta is applied to revert the changes.
+
+This approach reduces storage requirements and can be more efficient for managing file versions. Feel free to ask if you have more questions or need further assistance!
+
