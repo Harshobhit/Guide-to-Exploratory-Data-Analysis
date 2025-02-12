@@ -1,0 +1,125 @@
+#What is a Web Socket#
+A WebSocket is a communication protocol that provides full-duplex (two-way) communication channels over a single TCP connection. Unlike traditional HTTP, which follows a request-response model, WebSockets allow for continuous and interactive data exchange between the client (usually a web browser) and the server.
+
+Here’s a breakdown of how WebSockets work:
+
+Handshake: The client sends a WebSocket handshake request to the server using an HTTP GET request. If the server supports WebSockets, it responds with an upgrade header, switching the protocol from HTTP to WebSocket.
+
+Connection: Once the handshake is complete, a WebSocket connection is established, allowing both the client and server to send and receive messages in real-time.
+
+Communication: Messages are sent in small frames, which can include text or binary data. The connection remains open, enabling continuous communication.
+
+Close: Either the client or server can close the WebSocket connection, after which no more messages can be exchanged.
+
+WebSockets are particularly useful for applications that require real-time updates, such as chat applications, online gaming, live sports scores, or financial tickers.
+
+
+
+#Tornado#
+Tornado can be roughly divided into three major components:
+
+A web framework (including RequestHandler which is subclassed to create web applications, and various supporting classes).
+
+Client- and server-side implementions of HTTP (HTTPServer and AsyncHTTPClient).
+
+An asynchronous networking library including the classes IOLoop and IOStream, which serve as the building blocks for the HTTP components and can also be used to implement other protocols.
+
+
+
+#Tornado web server setup to upload excel file#
+Certainly! Here's an example of a Tornado web server that handles file uploads (Excel files), caches the uploaded files, and converts them into a Pandas DataFrame to perform some operations asynchronously when the client requests to view the data:
+
+python
+import tornado.ioloop
+import tornado.web
+import tornado.httpserver
+import tornado.options
+import os
+import uuid
+import pandas as pd
+import io
+from tornado import gen
+
+# Set up a cache and session management
+cache = {}
+sessions = {}
+
+class MainHandler(tornado.web.RequestHandler):
+    async def get(self):
+        self.write("Upload an Excel file.")
+
+class UploadHandler(tornado.web.RequestHandler):
+    async def post(self):
+        # Generate a unique session ID for each user
+        session_id = self.get_secure_cookie("session_id")
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            self.set_secure_cookie("session_id", session_id)
+        sessions[session_id] = self.request.files['file1'][0]['body']
+        
+        # Save the uploaded file in the cache
+        file_info = self.request.files['file1'][0]
+        filename = file_info['filename']
+        cache[filename] = file_info['body']
+        
+        self.write(f"File {filename} uploaded and saved in cache.")
+
+class ViewDataHandler(tornado.web.RequestHandler):
+    async def get(self):
+        # Get the session ID
+        session_id = self.get_secure_cookie("session_id")
+        if session_id and session_id in sessions:
+            excel_data = sessions[session_id]
+            # Convert the Excel data to a Pandas DataFrame
+            df = pd.read_excel(io.BytesIO(excel_data))
+            
+            # Perform some Pandas operations (example: describe the DataFrame)
+            result = await self.run_pandas_operations(df)
+            
+            # Convert the result to HTML and send it to the client
+            self.write(result.to_html())
+        else:
+            self.write("No file found for the current session.")
+    
+    @gen.coroutine
+    def run_pandas_operations(self, df):
+        # Simulate some async Pandas operations (example: describe the DataFrame)
+        result = df.describe()
+        raise gen.Return(result)
+
+def make_app():
+    return tornado.web.Application([
+        (r"/", MainHandler),
+        (r"/upload", UploadHandler),
+        (r"/view", ViewDataHandler),
+    ], cookie_secret="YOUR_SECRET_KEY_HERE")
+
+if __name__ == "__main__":
+    tornado.options.parse_command_line()
+    app = make_app()
+    server = tornado.httpserver.HTTPServer(app)
+    server.listen(8888)
+    tornado.ioloop.IOLoop.current().start()
+Explanation:
+MainHandler: Handles the GET requests and displays a simple message.
+
+UploadHandler: Handles the file uploads, assigns a unique session ID to each user, saves the uploaded file in the cache, and writes a response.
+
+ViewDataHandler: Handles GET requests to view the data. It retrieves the uploaded file from the cache using the session ID, converts the file to a Pandas DataFrame, performs some operations asynchronously, and sends the result back to the client as an HTML table.
+
+Important Points:
+Asynchronous Handling: The async keyword and the gen.coroutine decorator are used to make the handlers and Pandas operations asynchronous.
+
+Session Management: The session ID is managed using secure cookies. Each user gets a unique session ID.
+
+Cache: The uploaded files are stored in a dictionary (cache) where the filename is the key and the file content is the value.
+
+Pandas Operations: The run_pandas_operations method simulates asynchronous Pandas operations. You can customize this method to perform any desired Pandas operations.
+
+To run this server, save the script as server.py, and run it using:
+
+sh
+python server.py
+Then, you can upload files by sending a POST request to http://localhost:8888/upload and view the data by sending a GET request to http://localhost:8888/view.
+
+In Tornado, self.write() is a method used within request handlers to write the response to the client. When you call self.write(), you can send text, HTML, JSON, or any other data back to the client that made the request.
