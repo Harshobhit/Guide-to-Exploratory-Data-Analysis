@@ -1,0 +1,159 @@
+Sure! Let's create a Tornado WebSocket server to handle data operations on Excel files using Pandas, and a React client to interact with the server.
+
+Step 1: Install the required libraries
+First, you'll need to install Tornado and Pandas:
+
+bash
+pip install tornado pandas
+Step 2: Create the Tornado WebSocket server
+Create a file called server.py:
+
+python
+# server.py
+import tornado.ioloop
+import tornado.web
+import tornado.websocket
+import pandas as pd
+import json
+
+class ExcelWebSocketHandler(tornado.websocket.WebSocketHandler):
+    def open(self):
+        print("WebSocket opened")
+
+    def on_message(self, message):
+        data = json.loads(message)
+        operation = data.get("operation")
+
+        if operation == "read":
+            file_path = data.get("file_path")
+            sheet_name = data.get("sheet_name", None)
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+            self.write_message(df.to_json(orient='split'))
+
+        elif operation == "write":
+            file_path = data.get("file_path")
+            sheet_name = data.get("sheet_name", None)
+            content = data.get("content")
+            df = pd.DataFrame(content)
+            df.to_excel(file_path, sheet_name=sheet_name, index=False)
+            self.write_message(json.dumps({"status": "success"}))
+
+    def on_close(self):
+        print("WebSocket closed")
+
+def make_app():
+    return tornado.web.Application([
+        (r"/websocket", ExcelWebSocketHandler),
+    ])
+
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8888)
+    tornado.ioloop.IOLoop.current().start()
+Step 3: Create the React client
+Create a new React project using Create React App or any other boilerplate of your choice:
+
+bash
+npx create-react-app dataspell-client
+cd dataspell-client
+Step 4: Install the required libraries for the React client
+bash
+npm install websocket
+Step 5: Create a WebSocket connection in React
+Update the App.js file to create a WebSocket connection and handle messages from the server:
+
+jsx
+// src/App.js
+import React, { useEffect, useState } from 'react';
+import { w3cwebsocket as W3CWebSocket } from 'websocket';
+
+const client = new W3CWebSocket('ws://localhost:8888/websocket');
+
+function App() {
+  const [filePath, setFilePath] = useState('');
+  const [sheetName, setSheetName] = useState('');
+  const [content, setContent] = useState([]);
+  const [data, setData] = useState('');
+
+  useEffect(() => {
+    client.onopen = () => {
+      console.log('WebSocket Client Connected');
+    };
+
+    client.onmessage = (message) => {
+      const response = JSON.parse(message.data);
+      if (response.status === "success") {
+        alert("Data written successfully!");
+      } else {
+        setData(response.data);
+      }
+    };
+  }, []);
+
+  const readExcel = () => {
+    client.send(JSON.stringify({
+      operation: "read",
+      file_path: filePath,
+      sheet_name: sheetName
+    }));
+  };
+
+  const writeExcel = () => {
+    client.send(JSON.stringify({
+      operation: "write",
+      file_path: filePath,
+      sheet_name: sheetName,
+      content: content
+    }));
+  };
+
+  return (
+    <div>
+      <h1>DataSpell-like UI</h1>
+      <input type="text" placeholder="File Path" value={filePath} onChange={e => setFilePath(e.target.value)} />
+      <input type="text" placeholder="Sheet Name" value={sheetName} onChange={e => setSheetName(e.target.value)} />
+      <textarea placeholder="Content (JSON)" value={content} onChange={e => setContent(e.target.value)} />
+      <button onClick={readExcel}>Read Excel</button>
+      <button onClick={writeExcel}>Write Excel</button>
+      <pre>{data}</pre>
+    </div>
+  );
+}
+
+export default App;
+Explanation
+Server (server.py):
+
+Creates a WebSocket server using Tornado.
+
+Handles messages to read from and write to Excel files using Pandas.
+
+Responds with the data in JSON format.
+
+React Client (App.js):
+
+Connects to the WebSocket server using the websocket library.
+
+Provides input fields to specify the file path, sheet name, and content.
+
+Sends messages to the server to read from and write to Excel files.
+
+Displays the received data in a pre tag.
+
+Step 6: Run the server and client
+Run the server with:
+
+bash
+python server.py
+Run the React client with:
+
+bash
+npm start
+This example provides a basic implementation of a Tornado WebSocket server and a React client to handle data operations on Excel files using Pandas. You can further customize and expand this project as needed.
+
+Feel free to ask if you have any questions or need further assistance with your project!
+
+
+
+# Get the JSON data sent from the client
+        data = tornado.escape.json_decode(self.request.body)
